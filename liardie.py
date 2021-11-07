@@ -140,34 +140,31 @@ class LiarDieTrainer:
                         rolls_after_accept, regret, opp_claim)
             # Reset Strategy Sum after half the training
             if i == (total_iteration / 2):
-                self.reset_strategy_sum()
+                self.reset_strategy_sum(self.r_nodes)
+                self.reset_strategy_sum(self.c_nodes)
         # print('training done')
         self.print_result()
 
-    def reset_strategy_sum(self):
-        for nodes in self.r_nodes:
-            for node in nodes:
-                if node is not None:
-                    node.strategy_sum = 0
-        for nodes in self.c_nodes:
+    def reset_strategy_sum(self, node_set):
+        for nodes in node_set:
             for node in nodes:
                 if node is not None:
                     node.strategy_sum = 0
 
     def print_result(self):
-        for initialRoll in range(1, self.sides+1):
-            print('Initial claim policy with roll %d: %s' % (initialRoll, np.round(
-                self.c_nodes[0, initialRoll].get_average_strategy(), 2)))
+        for roll_init in range(1, self.sides+1):
+            print('Initial claim policy with roll %d: %s' % (roll_init, np.round(
+                self.c_nodes[0, roll_init].get_average_strategy(), 2)))
         print('\nOld Claim\tNew Claim\tAction Probabilities')
-        for myClaim in range(self.sides):
-            for oppClaim in range(myClaim+1, self.sides+1):
-                print('\t%d\t%d\t%s' % (myClaim, oppClaim,
-                      self.r_nodes[myClaim, oppClaim].get_average_strategy()))
+        for player_claim in range(self.sides):
+            for opp_claim in range(player_claim+1, self.sides+1):
+                print('\t%d\t%d\t%s' % (player_claim, opp_claim,
+                      self.r_nodes[player_claim, opp_claim].get_average_strategy()))
         print('\nOld Claim\tRoll\tAction Probabilities')
-        for oppClaim in range(self.sides):
+        for opp_claim in range(self.sides):
             for roll in range(1, self.sides+1):
-                print('%d\t%d\t%s' % (oppClaim, roll,
-                      self.c_nodes[oppClaim, roll].get_average_strategy()))
+                print('%d\t%d\t%s' % (opp_claim, roll,
+                      self.c_nodes[opp_claim, roll].get_average_strategy()))
 
 
 def main():
