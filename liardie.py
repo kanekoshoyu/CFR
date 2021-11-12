@@ -1,176 +1,184 @@
-from enum import Enum
-import numpy as np
+import random
 
+def buildEmptyArray(n,m):
+    a = [0] * n
+    for i in range(n):
+        a[i] = [0] * m 
 
-class Node(object):
-    u: float = 0.0
-    p_player: float = 0.0
-    p_opponent: float = 0.0
+    return a
 
-    def __init__(self, total_actions):
-        self.regret_sum = np.zeros(total_actions)
-        self.strategy = np.zeros(total_actions)
-        self.strategy_sum = np.zeros(total_actions)
+class Node():
+    def __init__(self, numActions, *args, **kwargs):
+        self.regretSum = [0] * numActions
+        self.strategy = [0] * numActions
+        self.strategySum = [0] * numActions
+        self.u = 0
+        self.pPlayer = 0
+        self.pOpponent = 0
 
-    def get_strategy(self):
-        self.strategy = np.maximum(self.regret_sum, 0.0)
-        norm_sum = np.sum(self.strategy)
-        if norm_sum > 0:
-            self.strategy /= norm_sum
-        else:
-            self.strategy.fill(1.0/len(self.strategy))
-        self.strategy_sum += self.p_player * self.strategy
+    def getStrategy(self):
+        normalizingSum = 0
+        for i in range(len(self.strategy)):
+            self.strategy[i] = max(self.regretSum[i], 0)
+            normalizingSum += self.strategy[i]
+
+        for i in range(len(self.strategy)):
+            if normalizingSum > 0:
+                self.strategy[i] /= normalizingSum
+            else:
+                self.strategy[i] = 1/len(self.strategy)
+
+        for i in range(len(self.strategy)):
+            self.strategySum[i] += self.pPlayer * self.strategy[i]
+
         return self.strategy
 
-    def get_average_strategy(self):
-        norm_sum = np.sum(self.strategy_sum)
-        if norm_sum > 0:
-            self.strategy_sum /= norm_sum
-        else:
-            self.strategy_sum = 1.0/len(self.strategy_sum)
-        return self.strategy_sum
-
-
-class Action(Enum):
-    Doubt = 0
-    Accept = 1
-
-
-class LiarDieTrainer:
-    def __init__(self, sides):
-        self.sides = sides
-        self.r_nodes = np.empty((sides, sides+1), dtype=Node)
-        self.c_nodes = np.empty((sides, sides+1), dtype=Node)
-        # Fill Response Nodes
-        for my_claim in range(sides):
-            for opp_claim in range(my_claim+1, sides+1):
-                if opp_claim == 0 or opp_claim == sides:
-                    self.r_nodes[my_claim, opp_claim] = Node(1)
-                else:
-                    self.r_nodes[my_claim, opp_claim] = Node(2)
-        # Fill Claim Nodes
-        for opp_claim in range(sides):
-            for roll in range(1, sides+1):
-                self.c_nodes[opp_claim, roll] = Node(sides - opp_claim)
-
-    def initialise_rolls(self, rolls):
-        for i in range(len(rolls)):
-            rolls[i] = np.random.randint(self.sides) + 1
-        self.c_nodes[0, rolls[0]].p_player = 1
-        self.c_nodes[0, rolls[0]].p_opponent = 1
-
-    def set_response_forward(self, rolls, opp_claim: int):
-        for player_claim in range(opp_claim):
-            r_node = self.r_nodes[player_claim, opp_claim]
-            p_action = r_node.get_strategy()
-            if opp_claim < self.sides:
-                next_node = self.c_nodes[opp_claim, rolls[opp_claim]]
-                next_node.p_player += (p_action[1] * r_node.p_player)
-                next_node.p_opponent += r_node.p_opponent
-
-    def set_claim_forward(self, rolls, opp_claim: int):
-        c_node = self.c_nodes[opp_claim, rolls[opp_claim]]
-        p_action = c_node.get_strategy()
-
-        for player_claim in range(opp_claim+1, self.sides+1):
-            p_next_claim = p_action[player_claim - opp_claim - 1]
-            if p_next_claim > 0:
-                next_node = self.r_nodes[opp_claim, player_claim]
-                next_node.p_player += c_node.p_opponent
-                next_node.p_opponent += p_next_claim * c_node.p_player
-
-    def set_claim_backward(self, rolls, regret, opp_claim: int):
-        node = self.c_nodes[opp_claim, rolls[opp_claim]]
-        p_action = node.strategy
-        node.u = 0.0
-
-        for player_claim in range(opp_claim+1, self.sides+1):
-            index_action = player_claim - opp_claim - 1
-            next_node = self.r_nodes[opp_claim, player_claim]
-
-            u_child = - next_node.u
-            regret[index_action] = u_child
-            node.u += p_action[index_action] * u_child
-        for a in range(len(p_action)):
-            regret[a] -= node.u
-            node.regret_sum[a] += node.p_opponent * regret[a]
-        node.p_player = 0
-        node.p_opponent = 0
-
-    def set_response_backward(self, rolls, regret,  opp_claim: int):
-        for myClaim in range(opp_claim):
-            node = self.r_nodes[myClaim, opp_claim]
-            p_action = node.strategy
-            node.u = 0.0
-            if opp_claim > rolls[myClaim]:
-                doubtUtil = 1
+    def getAverageStrategy(self):
+        normalizingSum = 0
+        for i in range(len(self.strategySum)):
+            normalizingSum += self.strategySum[i]
+        print("before", self.strategySum)
+        for i in range(len(self.strategySum)):
+            if normalizingSum > 0:
+                self.strategySum[i] /= normalizingSum
             else:
-                doubtUtil = -1
-            regret[Action.Doubt.value] = doubtUtil
-            node.u += p_action[Action.Doubt.value] * doubtUtil
-            if opp_claim < self.sides:
-                nextNode = self.c_nodes[opp_claim, rolls[opp_claim]]
-                regret[Action.Accept.value] += nextNode.u
-                node.u += (p_action[Action.Accept.value] * nextNode.u)
-            for a in range(len(p_action)):
-                regret[a] -= node.u
-                node.regret_sum[a] += (node.p_opponent * regret[a])
-                node.p_player = 0
-                node.p_opponent = 0
+                self.strategySum[i] = 1 / len(self.strategySum)
+                print("na")
+        print("after", self.strategySum)
+        return self.strategySum
 
-    def train(self, total_iteration):
-        rolls_after_accept = np.zeros(self.sides, dtype=int)
-        regret = np.zeros(self.sides)
-        # print('training start')
-        for i in range(total_iteration):
-            self.initialise_rolls(rolls_after_accept)
-            # Accumulate Realisation Weight Forward
-            for opp_claim in range(self.sides+1):
-                if opp_claim > 0:
-                    self.set_response_forward(rolls_after_accept, opp_claim)
-                if opp_claim < self.sides:
-                    self.set_claim_forward(rolls_after_accept, opp_claim)
-            # Back Propagation
-            for opp_claim in reversed(range(self.sides+1)):
-                if opp_claim < self.sides:
-                    self.set_claim_backward(
-                        rolls_after_accept, regret, opp_claim)
-                if opp_claim > 0:
-                    self.set_response_backward(
-                        rolls_after_accept, regret, opp_claim)
-            # Reset Strategy Sum after half the training
-            if i == (total_iteration / 2):
-                self.reset_strategy_sum(self.r_nodes)
-                self.reset_strategy_sum(self.c_nodes)
-        # print('training done')
-        self.print_result()
+class LDTrainer():
+    def __init__(self, sides, *args, **kwargs):
+        self.DOUBT = 0
+        self.ACCEPT = 1
+        self.sides = sides
+        self.responseNodes = buildEmptyArray(sides, sides + 1)
+        self.claimNodes = buildEmptyArray(sides, sides + 1)
 
-    def reset_strategy_sum(self, node_set):
-        for nodes in node_set:
-            for node in nodes:
-                if node is not None:
-                    node.strategy_sum = 0
+        for myClaim in range(sides + 1):
+            for oppClaim in range(myClaim + 1, sides + 1):
+                self.responseNodes[myClaim][oppClaim] = Node(1 if (oppClaim == 0 or oppClaim == sides) else 2)
+        
+        for oppClaim in range(sides):
+            for roll in range(1, sides + 1):
+                self.claimNodes[oppClaim][roll] = Node(sides - oppClaim)
 
-    def print_result(self):
-        for roll_init in range(1, self.sides+1):
-            print('Initial claim policy with roll %d: %s' % (roll_init, np.round(
-                self.c_nodes[0, roll_init].get_average_strategy(), 2)))
-        print('\nOld Claim\tNew Claim\tAction Probabilities')
-        for player_claim in range(self.sides):
-            for opp_claim in range(player_claim+1, self.sides+1):
-                print('\t%d\t%d\t%s' % (player_claim, opp_claim,
-                      self.r_nodes[player_claim, opp_claim].get_average_strategy()))
-        print('\nOld Claim\tRoll\tAction Probabilities')
-        for opp_claim in range(self.sides):
-            for roll in range(1, self.sides+1):
-                print('%d\t%d\t%s' % (opp_claim, roll,
-                      self.c_nodes[opp_claim, roll].get_average_strategy()))
+    def train(self, iterations):
+        regret = [0] * self.sides
+        rollAfterAcceptingClaim = [0] * self.sides
+        for epoch in range(iterations):
+
+            #Initialize rolls and starting probabilities
+            for i in range(len(rollAfterAcceptingClaim)):
+                rollAfterAcceptingClaim[i] = random.randint(0, self.sides - 1) + 1
+            self.claimNodes[0][rollAfterAcceptingClaim[0]].pPlayer = 1
+            self.claimNodes[0][rollAfterAcceptingClaim[0]].pOpponent = 1
+
+            #Accumulate realization weights forward
+            for oppClaim in range(0, self.sides + 1):
+                #visit response Nodes forward
+                if oppClaim > 0:
+                    for myClaim in range(0, oppClaim):
+                        node = self.responseNodes[myClaim][oppClaim]
+                        actionProb = node.getStrategy()
+                        if oppClaim < self.sides:
+                            nextNode = self.claimNodes[oppClaim][rollAfterAcceptingClaim[oppClaim]]
+                            nextNode.pPlayer += actionProb[1] * node.pPlayer
+                            nextNode.pOpponent += node.pOpponent
+
+                #visit claim nodes forward
+                if oppClaim < self.sides:
+                    node = self.claimNodes[oppClaim][rollAfterAcceptingClaim[oppClaim]]
+                    actionProb = node.getStrategy()
+                    for myClaim in range(oppClaim + 1, self.sides + 1):
+                        nextClaimProb = actionProb[myClaim - oppClaim - 1]
+                        if nextClaimProb > 0:
+                            nextNode = self.responseNodes[oppClaim][myClaim]
+                            nextNode.pPlayer += node.pOpponent
+                            nextNode.pOpponent += nextClaimProb * node.pPlayer
+
+            #Backpropagate utilities, adjusting regrets and strategies
+            for oppClaim in range(self.sides, -1, -1):
+                #visit claim nodes backward
+                if oppClaim < self.sides:
+                    node = self.claimNodes[oppClaim][rollAfterAcceptingClaim[oppClaim]]
+                    actionProb = node.strategy
+                    node.u = 0
+                    for myClaim in range(oppClaim + 1, sides + 1):
+                        actionIndex = myClaim - oppClaim - 1
+                        nextNode = self.responseNodes[oppClaim][myClaim]
+                        childUtil = - nextNode.u
+                        regret[actionIndex] = childUtil
+                        node.u += actionProb[actionIndex] * childUtil
+
+                    for i in range(len(actionProb)):
+                        regret[i] -= node.u
+                        node.regretSum[i] += node.pOpponent * regret[i]
+
+                    node.pPlayer = node.pOpponent = 0
+                    
+                #visit response nodes backward
+                if oppClaim > 0:
+                    for myClaim in range(0, oppClaim):
+                        node = self.responseNodes[myClaim][oppClaim]
+                        actionProb = node.strategy
+                        node.u = 0
+                        doubtUtil = 1 if (oppClaim > rollAfterAcceptingClaim[myClaim]) else -1
+                        regret[self.DOUBT] = doubtUtil
+
+                        if oppClaim < sides:
+                            nextNode = self.claimNodes[oppClaim][rollAfterAcceptingClaim[oppClaim]]
+                            regret[self.ACCEPT] = nextNode.u
+                            node.u += actionProb[self.ACCEPT] * nextNode.u
+
+                        for i in range(len(actionProb)):
+                            regret[i] -= node.u
+                            node.regretSum[i] += node.pOpponent * regret[i]
+
+                        node.pPlayer = node.pOpponent = 0
+
+            #Reset strategy sums after half of training
+            if epoch == iterations / 2:
+                for row in self.responseNodes:
+                    for n in row:
+                        if n:
+                            for i in range(len(n.strategySum)):
+                                n.strategySum[i] = 0
+
+                for row in self.claimNodes:
+                    for n in row:
+                        if n:
+                            for i in range(len(n.strategySum)):
+                                n.strategySum[i] = 0
 
 
-def main():
-    trainer = LiarDieTrainer(6)
-    trainer.train(10000)
+        #print strats
+
+        for initialRoll in range(1, sides + 1):
+            print("Initial claim policy with roll {0:d}: ".format(initialRoll), end = '')
+            for prob in self.claimNodes[0][initialRoll].getAverageStrategy():
+                print('{0:.2f} '.format(prob), end = '')
+            print('')
+        
+        # print('\nOld Claim\tNew Claim\tAction Probabilities')
+        # for myClaim in range(0, sides + 1):
+        #     for oppClaim in range(myClaim + 1, sides + 1):
+        #         print('\t{0:d}\t{1:d}\t{2:s}\n'.format(myClaim, oppClaim, str(self.responseNodes[myClaim][oppClaim].getAverageStrategy())))
+
+        # print('\nOld Claim\tRoll\tAction Probabilities')
+        # for oppClaim in range(0, sides):
+        #     for roll in range(1, sides + 1):
+        #         print('\t{0:d}\t{1:d}\t{2:s}\n'.format(
+        #             oppClaim, 
+        #             roll, 
+        #             str(self.claimNodes[oppClaim][roll].getAverageStrategy()
+        #         )))
+        #         print('regrets', self.claimNodes[oppClaim][roll].regretSum)
 
 
-if __name__ == '__main__':
-    main()
+
+
+if __name__ == "__main__":
+    sides = 6
+    iterations = 10000
+    LDTrainer(6).train(iterations)
